@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 140">
+  <g fill="#ff7a00">
+    <path id="wing" d="M106 52 C88 32 66 24 46 26 L16 38 L32 48 L18 56 L34 66 L22 74 L48 82 C70 86 94 76 106 66 Z"/>
+    <use href="#wing" transform="translate(240,0) scale(-1,1)"/>
+    <ellipse cx="120" cy="62" rx="16" ry="13"/>
+    <path d="M106 50 L94 26 L118 44 Z"/>
+    <path d="M134 50 L146 26 L122 44 Z"/>
+    <ellipse cx="120" cy="78" rx="9" ry="7"/>
+  </g>
+  <g fill="#ffd08a">
+    <circle cx="114" cy="60" r="2.6"/>
+    <circle cx="126" cy="60" r="2.6"/>
+  </g>
+</svg>

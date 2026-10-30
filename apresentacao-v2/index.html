@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bash, Java &amp; Threads Virtuais — Halloween Dev Edition</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23050505'/%3E%3Cpath d='M16 22l10 10-10 10' stroke='%23ff7a00' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M32 44h16' stroke='%23ffb347' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#040303; --orange:#ff7a00; --orange2:#ffb347; --hot:#ff3d00;
+    --text:#f7f1e8; --muted:#a99b8c; --dim:#6f6358;
+    --line:rgba(255,122,0,.22); --line-strong:rgba(255,122,0,.45);
+    --panel:rgba(255,122,0,.055);
+    --mono:"JetBrains Mono","Cascadia Code","SFMono-Regular",Consolas,"Liberation Mono",monospace;
+    --sans:"Inter","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:#000;color:var(--text);font-family:var(--sans);overflow:hidden}
+  body{display:grid;place-items:center}
+  button{font:inherit;color:inherit}
+  a{color:var(--orange2)} a:hover{color:var(--orange)}
+
+  #stage{
+    position:relative;width:1280px;height:720px;
+    background:var(--bg);overflow:hidden;border-radius:16px;
+    box-shadow:0 40px 120px rgba(0,0,0,.85),0 0 0 1px rgba(255,122,0,.13),0 0 90px rgba(255,122,0,.06);
+  }
+
+  /* transição entre slides: esmaecer */
+  .slide{
+    position:absolute;inset:0;padding:46px 58px 52px;display:flex;flex-direction:column;
+    opacity:0;pointer-events:none;transition:opacity .75s ease;
+    background:
+      radial-gradient(900px 520px at 88% -12%,rgba(255,122,0,.13),transparent 62%),
+      radial-gradient(620px 440px at -10% 112%,rgba(255,61,0,.10),transparent 60%),
+      var(--bg);
+  }
+  .slide.active{opacity:1;pointer-events:auto}
+  .slide::before{
+    content:"";position:absolute;inset:0;pointer-events:none;opacity:.45;
+    background-image:linear-gradient(rgba(255,122,0,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,122,0,.04) 1px,transparent 1px);
+    background-size:64px 64px;
+    -webkit-mask-image:radial-gradient(ellipse at 60% 45%,#000 0%,transparent 78%);
+    mask-image:radial-gradient(ellipse at 60% 45%,#000 0%,transparent 78%);
+  }
+  .slide-head{position:relative;z-index:2;margin-bottom:16px;flex:none}
+  .kicker{display:flex;align-items:center;gap:10px;margin-bottom:9px;font:600 11px/1 var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--orange)}
+  .kicker::before{content:"";width:26px;height:2px;background:var(--orange);box-shadow:0 0 14px var(--orange)}
+  h1,h2,h3,p{margin:0}
+  h1,h2{font-weight:900;letter-spacing:-.045em;line-height:.96}
+  h2{font-size:40px;max-width:1040px}
+  .lede{color:var(--muted);font-size:15px;line-height:1.45;margin-top:9px;max-width:940px}
+  .grad{background:linear-gradient(100deg,#ffd08a 0%,#ffb347 28%,#ff7a00 62%,#ff3d00 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .content{position:relative;z-index:2;flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:14px}
+  .slide-foot{position:absolute;left:58px;right:58px;bottom:16px;z-index:2;display:flex;justify-content:space-between;font:500 9px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:rgba(247,241,232,.24)}
+  .reveal{opacity:0}
+  .slide.active .reveal{animation:rise .7s cubic-bezier(.2,.72,.2,1) both;animation-delay:var(--d,0s)}
+  @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+  @keyframes flap{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-14px) rotate(2deg)}}
+
+  /* decoração halloween */
+  .deco{position:absolute;z-index:1;pointer-events:none}
+  .deco img{display:block;width:100%}
+  .bat{animation:flap 6s ease-in-out infinite}
+  .cat{opacity:.9}
+  .pumpkin{opacity:.95;animation:float 8s ease-in-out infinite}
+  .glow{filter:drop-shadow(0 0 22px rgba(255,122,0,.35))}
+
+  /* código e terminal */
+  .term,.code{
+    font:500 12.5px/1.55 var(--mono);background:#0b0908;border:1px solid var(--line);
+    border-radius:12px;padding:14px 18px;color:var(--text);white-space:pre;overflow:hidden
+  }
+  .term .p{color:var(--orange)} .term .out{color:var(--muted)} .term .ok{color:var(--orange2)}
+  .code .c{color:var(--dim)} .code .k{color:var(--orange)} .code .s{color:var(--orange2)}
+
+  /* cards */
+  .cards{display:grid;gap:14px}
+  .card{border:1px solid var(--line);border-radius:14px;padding:18px 20px;background:var(--panel)}
+  .card h3{font-size:17px;font-weight:800;color:var(--orange2);margin-bottom:7px}
+  .card p{font-size:13.5px;color:var(--muted);line-height:1.45}
+  .card .tag{font:600 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--orange);margin-bottom:8px}
+  .note{border:1px dashed var(--line-strong);border-radius:12px;padding:12px 16px;background:rgba(255,61,0,.07);font-size:12.5px;color:var(--muted);line-height:1.4}
+  .note b{color:var(--orange2)}
+
+  /* capa */
+  .cover{padding:0 64px;justify-content:center}
+  .cover-grid{position:relative;z-index:2;display:grid;grid-template-columns:1.06fr .94fr;gap:26px;align-items:center;height:100%}
+  .cover h1{font-size:76px;line-height:.88;margin:0 0 18px}
+  .cover-sub{color:var(--muted);font-size:16px;line-height:1.5;max-width:600px}
+  .cover-sub b{color:var(--text);font-weight:600}
+  .pills{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 22px;max-width:620px}
+  .pill{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border:1px solid var(--line);border-radius:999px;background:rgba(255,122,0,.06);font:600 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--orange2)}
+  .pill i{width:5px;height:5px;border-radius:50%;background:var(--orange);box-shadow:0 0 8px var(--orange)}
+  .cover-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;gap:9px;padding:13px 20px;border-radius:11px;border:1px solid var(--line-strong);background:rgba(255,122,0,.08);color:var(--text);font:700 12px/1 var(--mono);letter-spacing:.05em;text-decoration:none;cursor:pointer;transition:transform .2s ease,background .2s ease,border-color .2s ease,box-shadow .2s ease}
+  .btn:hover{transform:translateY(-2px);border-color:var(--orange);background:rgba(255,122,0,.16);box-shadow:0 12px 30px rgba(255,122,0,.14)}
+  .btn.primary{background:linear-gradient(100deg,#ff9d2e,#ff5a00);border-color:transparent;color:#160b02;box-shadow:0 12px 34px rgba(255,90,0,.28)}
+  .btn.ghost{background:rgba(0,0,0,.25)}
+  .cover-side{display:flex;flex-direction:column;gap:14px;align-items:center}
+  .cover-term{width:400px;transform:rotate(-2deg);animation:float 7s ease-in-out infinite}
+
+  /* navegação */
+  #nav{position:fixed;left:0;right:0;bottom:14px;z-index:100;display:flex;align-items:center;justify-content:center;gap:14px;pointer-events:none}
+  .navbtn{pointer-events:auto;width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:rgba(255,122,0,.08);cursor:pointer;font-size:16px;line-height:1;transition:background .2s ease,border-color .2s ease}
+  .navbtn:hover{background:rgba(255,122,0,.2);border-color:var(--orange)}
+  #dots{pointer-events:auto;display:flex;gap:7px}
+  .dot{width:9px;height:9px;border-radius:50%;background:rgba(255,122,0,.25);border:none;cursor:pointer;transition:background .2s ease,transform .2s ease}
+  .dot.on{background:var(--orange);box-shadow:0 0 10px var(--orange);transform:scale(1.25)}
+  #counter{position:fixed;top:14px;right:16px;z-index:100;font:600 10px/1 var(--mono);letter-spacing:.15em;color:var(--dim)}
+  #progress{position:fixed;left:0;right:0;top:0;height:3px;z-index:100;background:rgba(255,122,0,.12)}
+  #progress i{display:block;height:100%;background:linear-gradient(90deg,var(--orange),var(--hot));transition:width .55s ease}
+
+  /* grids específicos */
+  .grid3{grid-template-columns:repeat(3,1fr)}
+  .grid2{grid-template-columns:1fr 1fr}
+  .split{display:grid;grid-template-columns:1.1fr .9fr;gap:20px;align-items:start}
+  .filetree{font:500 13px/1.7 var(--mono);background:#0b0908;border:1px solid var(--line);border-radius:12px;padding:16px 20px;white-space:pre;overflow:hidden}
+  .filetree .f{color:var(--orange2);font-weight:700} .filetree .d{color:var(--dim)}
+  .steps{display:grid;gap:12px}
+  .step{display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:12px 16px;background:var(--panel)}
+  .step .n{font:800 14px/1 var(--mono);color:var(--orange);width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:rgba(255,122,0,.12);border:1px solid var(--line-strong)}
+  .step .cmd{font:500 12.5px/1.5 var(--mono);color:var(--text)}
+  .step .cmd em{color:var(--muted);font-style:normal;font-size:11.5px}
+  table.links{border-collapse:collapse;font-size:13px;width:100%}
+  table.links th{font:700 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--orange);padding:9px 12px;border-bottom:1px solid var(--line-strong);text-align:left}
+  table.links td{padding:8px 12px;border-bottom:1px solid var(--line);color:var(--muted)}
+  table.links td b{color:var(--text)}
+  table.links a{font:500 11px/1.3 var(--mono)}
+  .threads-img{width:100%;border:1px solid var(--line);border-radius:14px}
+  .takeaways{display:flex;gap:10px;flex-wrap:wrap}
+  .take{border:1px solid var(--line);border-radius:12px;padding:13px 16px;background:var(--panel);font-size:13px;color:var(--muted);line-height:1.4}
+  .take b{color:var(--orange2)}
+  .cheat{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .cheat .cmd{border:1px solid var(--line);border-radius:12px;padding:13px;background:var(--panel)}
+  .cheat .cmd code{font:700 13px/1 var(--mono);color:var(--orange2);display:block;margin-bottom:6px}
+  .cheat .cmd span{font-size:11.5px;color:var(--muted)}
+
+  /* slide 10: diagrama à esquerda, cheat-sheet à direita */
+  .versus{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:center}
+  .versus aside{display:flex;flex-direction:column;gap:10px}
+  .versus .cheat{grid-template-columns:1fr 1fr;gap:10px}
+  .versus .cheat .cmd{padding:11px 13px}
+  .versus .cheat .cmd code{font-size:12px}
+  .versus .cheat .cmd span{font-size:10.5px}
+  .versus .takeaways{flex-direction:column;gap:8px}
+  .versus .take{padding:10px 13px;font-size:12px}
+  @media (max-width:1320px){#stage{width:100vw;height:calc(100vw * .5625)}}
+</style>
+</head>
+<body>
+<div id="progress"><i></i></div>
+<div id="counter">01 / 10</div>
+<div id="stage">
+  <!-- 1. CAPA -->
+  <section class="slide cover active">
+    <div class="deco bat glow" style="left:70px;top:60px;width:120px"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNDAgMTQwIj4KICA8ZyBmaWxsPSIjZmY3YTAwIj4KICAgIDxwYXRoIGlkPSJ3aW5nIiBkPSJNMTA2IDUyIEM4OCAzMiA2NiAyNCA0NiAyNiBMMTYgMzggTDMyIDQ4IEwxOCA1NiBMMzQgNjYgTDIyIDc0IEw0OCA4MiBDNzAgODYgOTQgNzYgMTA2IDY2IFoiLz4KICAgIDx1c2UgaHJlZj0iI3dpbmciIHRyYW5zZm9ybT0idHJhbnNsYXRlKDI0MCwwKSBzY2FsZSgtMSwxKSIvPgogICAgPGVsbGlwc2UgY3g9IjEyMCIgY3k9IjYyIiByeD0iMTYiIHJ5PSIxMyIvPgogICAgPHBhdGggZD0iTTEwNiA1MCBMOTQgMjYgTDExOCA0NCBaIi8+CiAgICA8cGF0aCBkPSJNMTM0IDUwIEwxNDYgMjYgTDEyMiA0NCBaIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTIwIiBjeT0iNzgiIHJ4PSI5IiByeT0iNyIvPgogIDwvZz4KICA8ZyBmaWxsPSIjZmZkMDhhIj4KICAgIDxjaXJjbGUgY3g9IjExNCIgY3k9IjYwIiByPSIyLjYiLz4KICAgIDxjaXJjbGUgY3g9IjEyNiIgY3k9IjYwIiByPSIyLjYiLz4KICA8L2c+Cjwvc3ZnPgo=" alt="morcego"></div>
+    <div class="deco bat glow" style="right:120px;top:38px;width:90px;animation-delay:1.2s"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNDAgMTQwIj4KICA8ZyBmaWxsPSIjZmY3YTAwIj4KICAgIDxwYXRoIGlkPSJ3aW5nIiBkPSJNMTA2IDUyIEM4OCAzMiA2NiAyNCA0NiAyNiBMMTYgMzggTDMyIDQ4IEwxOCA1NiBMMzQgNjYgTDIyIDc0IEw0OCA4MiBDNzAgODYgOTQgNzYgMTA2IDY2IFoiLz4KICAgIDx1c2UgaHJlZj0iI3dpbmciIHRyYW5zZm9ybT0idHJhbnNsYXRlKDI0MCwwKSBzY2FsZSgtMSwxKSIvPgogICAgPGVsbGlwc2UgY3g9IjEyMCIgY3k9IjYyIiByeD0iMTYiIHJ5PSIxMyIvPgogICAgPHBhdGggZD0iTTEwNiA1MCBMOTQgMjYgTDExOCA0NCBaIi8+CiAgICA8cGF0aCBkPSJNMTM0IDUwIEwxNDYgMjYgTDEyMiA0NCBaIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTIwIiBjeT0iNzgiIHJ4PSI5IiByeT0iNyIvPgogIDwvZz4KICA8ZyBmaWxsPSIjZmZkMDhhIj4KICAgIDxjaXJjbGUgY3g9IjExNCIgY3k9IjYwIiByPSIyLjYiLz4KICAgIDxjaXJjbGUgY3g9IjEyNiIgY3k9IjYwIiByPSIyLjYiLz4KICA8L2c+Cjwvc3ZnPgo=" alt="morcego"></div>
+    <div class="cover-grid">
+      <div>
+        <div class="kicker reveal">halloween dev edition · 10 slides</div>
+        <h1 class="reveal" style="--d:.06s">Bash, Java<br><span class="grad">&amp; Threads Virtuais</span></h1>
+        <p class="cover-sub reveal" style="--d:.14s">Do <b>~/.bashrc</b> até <b>milhões de threads</b> rodando num único processo — sem sustos, sem copy-paste cego e com o mesmo toolkit no Windows, macOS e Linux.</p>
+        <div class="pills reveal" style="--d:.22s">
+          <span class="pill"><i></i>bash em 3 sabores</span>
+          <span class="pill"><i></i>multi-Java sem dor</span>
+          <span class="pill"><i></i>Java 25 LTS</span>
+          <span class="pill"><i></i>threads virtuais</span>
+        </div>
+        <div class="cover-actions reveal" style="--d:.3s">
+          <a class="btn primary" href="bash-toolkit.zip">baixar bash-toolkit.zip</a>
+          <button class="btn ghost" id="start">começar →</button>
+        </div>
+      </div>
+      <div class="cover-side reveal" style="--d:.36s">
+        <div class="term cover-term">
+<span class="p">$</span> java-set 25
+<span class="ok">Java 25 ativado ✔</span>
+<span class="p">$</span> mvn-build-skip-tests
+<span class="out">BUILD SUCCESS · 1.4 s</span>
+<span class="p">$</span> java -version
+<span class="out">openjdk 25.0.2 (LTS)</span>
+        </div>
+        <div class="pumpkin glow" style="width:190px"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNDAgMjIwIj4KICA8cGF0aCBkPSJNMTEyIDU2IEMxMDYgNDAgMTE2IDI4IDEzMiAyNCBDMTM4IDI2IDEzNCAzNiAxMjYgNDIgQzEyMCA0NiAxMTggNTAgMTE4IDU2IFoiIGZpbGw9IiM2ZjRhMjAiLz4KICA8ZWxsaXBzZSBjeD0iMTIwIiBjeT0iMTI0IiByeD0iODIiIHJ5PSI3MCIgZmlsbD0iI2ZmN2EwMCIvPgogIDxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2MwNGYwMCIgc3Ryb2tlLXdpZHRoPSIzIiBvcGFjaXR5PSIuNyI+CiAgICA8cGF0aCBkPSJNOTIgNTggQzc4IDkyIDc4IDE1NiA5MiAxOTAiLz4KICAgIDxwYXRoIGQ9Ik0xNDggNTggQzE2MiA5MiAxNjIgMTU2IDE0OCAxOTAiLz4KICAgIDxwYXRoIGQ9Ik02NCA3MiBDNTIgMTAwIDUyIDE0OCA2NCAxNzYiLz4KICAgIDxwYXRoIGQ9Ik0xNzYgNzIgQzE4OCAxMDAgMTg4IDE0OCAxNzYgMTc2Ii8+CiAgPC9nPgogIDxnIGZpbGw9IiMwODA2MDUiPgogICAgPHBhdGggZD0iTTg0IDEwMiBMMTA2IDkyIEwxMDAgMTE4IFoiLz4KICAgIDxwYXRoIGQ9Ik0xNTYgMTAyIEwxMzQgOTIgTDE0MCAxMTggWiIvPgogICAgPHBhdGggZD0iTTkwIDEzMiBMMTA0IDEyOCBMMTEyIDE0MCBMMTIwIDEyOCBMMTI4IDE0MCBMMTM2IDEyOCBMMTUwIDEzMiBMMTQ2IDE1OCBMOTQgMTU4IFoiLz4KICA8L2c+CiAgPGcgZmlsbD0iI2ZmZDA4YSI+CiAgICA8Y2lyY2xlIGN4PSI5NiIgY3k9IjEwNCIgcj0iMi41Ii8+CiAgICA8Y2lyY2xlIGN4PSIxNDQiIGN5PSIxMDQiIHI9IjIuNSIvPgogIDwvZz4KPC9zdmc+Cg==" alt="abóbora"></div>
+      </div>
+    </div>
+    <div class="slide-foot"><span>bash + java + maven</span><span>← → para navegar</span></div>
+  </section>
+
+  <!-- 2. VARIANTES DO BASH -->
+  <section class="slide">
+    <div class="deco bat glow" style="right:60px;top:30px;width:110px"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNDAgMTQwIj4KICA8ZyBmaWxsPSIjZmY3YTAwIj4KICAgIDxwYXRoIGlkPSJ3aW5nIiBkPSJNMTA2IDUyIEM4OCAzMiA2NiAyNCA0NiAyNiBMMTYgMzggTDMyIDQ4IEwxOCA1NiBMMzQgNjYgTDIyIDc0IEw0OCA4MiBDNzAgODYgOTQgNzYgMTA2IDY2IFoiLz4KICAgIDx1c2UgaHJlZj0iI3dpbmciIHRyYW5zZm9ybT0idHJhbnNsYXRlKDI0MCwwKSBzY2FsZSgtMSwxKSIvPgogICAgPGVsbGlwc2UgY3g9IjEyMCIgY3k9IjYyIiByeD0iMTYiIHJ5PSIxMyIvPgogICAgPHBhdGggZD0iTTEwNiA1MCBMOTQgMjYgTDExOCA0NCBaIi8+CiAgICA8cGF0aCBkPSJNMTM0IDUwIEwxNDYgMjYgTDEyMiA0NCBaIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTIwIiBjeT0iNzgiIHJ4PSI5IiByeT0iNyIvPgogIDwvZz4KICA8ZyBmaWxsPSIjZmZkMDhhIj4KICAgIDxjaXJjbGUgY3g9IjExNCIgY3k9IjYwIiByPSIyLjYiLz4KICAgIDxjaXJjbGUgY3g9IjEyNiIgY3k9IjYwIiByPSIyLjYiLz4KICA8L2c+Cjwvc3ZnPgo=" alt="morcego"></div>
+    <div class="slide-head">
+      <div class="kicker">01 · o terreno</div>
+      <h2 class="reveal">Bash: três casas,<br><span class="grad">a mesma linguagem</span></h2>
+      <p class="lede reveal" style="--d:.08s">Git Bash, Linux e macOS têm detalhes diferentes, mas todos executam os mesmos scripts. A peça que amarra tudo isso é o <b>~/.bashrc</b>.</p>
+    </div>
+    <div class="content">
+      <div class="cards grid3 reveal" style="--d:.16s">
+        <div class="card">
+          <div class="tag">linux</div>
+          <h3>bash 4 / 5</h3>
+          <p>Bash moderno e interativo: cada terminal novo lê <b>~/.bashrc</b>. É o cenário mais previsível — use ele como referência.</p>
+        </div>
+        <div class="card">
+          <div class="tag">macOS</div>
+          <h3>bash 3.2 + zsh</h3>
+          <p>O bash do sistema é antigo (3.2) e o shell padrão é zsh. Se você abrir <b>bash</b> no Terminal, ele é um shell de <b>login</b>: lê <b>~/.bash_profile</b>. Cole a linha do bootstrap nos dois arquivos.</p>
+        </div>
+        <div class="card">
+          <div class="tag">Windows</div>
+          <h3>Git Bash</h3>
+          <p>MSYS2 dentro do Git for Windows: tem <b>~</b>, <b>~/.bashrc</b>, aliases e functions como no Linux. A mesma sequência de comandos funciona sem mudança.</p>
+        </div>
+      </div>
+      <div class="note reveal" style="--d:.24s"><b>Regra de ouro:</b> um script só é aproveitado se ele for <b>source</b>-ado no shell atual. <b>source bootstrap.sh</b> roda no shell que está aberto; <b>bash bootstrap.sh</b> cria um filho e nada sobra (aliases e functions somem).</div>
+    </div>
+    <div class="slide-foot"><span>bash e suas variantes</span><span>02 / 10</span></div>
+  </section>
+
+  <!-- 3. ~/.bashrc -->
+  <section class="slide">
+    <div class="deco cat" style="left:56px;bottom:52px;width:130px"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNDAgMjIwIj4KICA8ZyBmaWxsPSIjMTIwZDA5IiBzdHJva2U9IiNmZjdhMDAiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+CiAgICA8IS0tIGNvcnBvIHNlbnRhZG8gLS0+CiAgICA8cGF0aCBkPSJNNjYgMjEyIEM1OCAxNTggNzYgMTE4IDEyMCAxMTAgQzE2NCAxMTggMTgyIDE1OCAxNzQgMjEyIFoiLz4KICAgIDwhLS0gY2FiZcOnYSAtLT4KICAgIDxjaXJjbGUgY3g9IjEyMCIgY3k9Ijc0IiByPSIzOCIvPgogICAgPCEtLSBvcmVsaGFzIC0tPgogICAgPHBhdGggZD0iTTk0IDQ0IEw3NiAxMiBMMTE0IDM2IFoiLz4KICAgIDxwYXRoIGQ9Ik0xNDYgNDQgTDE2NCAxMiBMMTI2IDM2IFoiLz4KICAgIDwhLS0gcGF0YXMgLS0+CiAgICA8cGF0aCBkPSJNODQgMjEyIEM4NCAyMDIgOTYgMTk4IDEwNCAyMDIgTDEwNCAyMTIgWiIvPgogICAgPHBhdGggZD0iTTEzNiAyMTIgQzE0NCAyMDIgMTU2IDE5OCAxNTYgMjEyIFoiLz4KICA8L2c+CiAgPCEtLSByYWJvIC0tPgogIDxwYXRoIGQ9Ik0xNzIgMTk2IEMyMTQgMTkwIDIzMiAxNDggMjIwIDExMiBDMjE0IDk0IDE5OCA5MiAxODggMTAyIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjdhMDAiIHN0cm9rZS13aWR0aD0iNyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPCEtLSBvbGhvcyAtLT4KICA8ZyBmaWxsPSIjZmY3YTAwIj4KICAgIDxlbGxpcHNlIGN4PSIxMDQiIGN5PSI3MiIgcng9IjkiIHJ5PSIxMSIvPgogICAgPGVsbGlwc2UgY3g9IjEzNiIgY3k9IjcyIiByeD0iOSIgcnk9IjExIi8+CiAgPC9nPgogIDxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZDA4YSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIG9wYWNpdHk9Ii44Ij4KICAgIDxwYXRoIGQ9Ik0xMTIgOTIgQzExOCA5OCAxMjIgOTggMTI4IDkyIi8+CiAgICA8cGF0aCBkPSJNOTYgODQgQzgyIDkwIDcyIDk2IDY0IDEwMiIvPgogICAgPHBhdGggZD0iTTE0NCA4NCBDMTU4IDkwIDE2OCA5NiAxNzYgMTAyIi8+CiAgICA8cGF0aCBkPSJNOTggOTQgQzg2IDEwMiA3OCAxMDggNzIgMTE0Ii8+CiAgICA8cGF0aCBkPSJNMTQyIDk0IEMxNTQgMTAyIDE2MiAxMDggMTY4IDExNCIvPgogIDwvZz4KPC9zdmc+Cg==" alt="gato preto"></div>
+    <div class="slide-head">
+      <div class="kicker">02 · o arquivo mágico</div>
+      <h2 class="reveal"><span class="grad">~/.bashrc</span> — o cérebro<br>de cada terminal novo</h2>
+      <p class="lede reveal" style="--d:.08s">Toda vez que você abre um bash <b>interativo</b>, ele executa este arquivo linha a linha. Tudo que você quer que "exista sempre" vive aqui.</p>
+    </div>
+    <div class="content">
+      <div class="split reveal" style="--d:.16s">
+        <div class="code">
+<span class="c"># ~/.bashrc — executado a cada shell interativo</span>
+source $HOME/dev/bash/<span class="s">bootstrap.sh</span>   <span class="c"># carrega funções e aliases</span>
+
+<span class="k">alias</span> g="git"
+<span class="k">alias</span> ll="ls -lh"
+<span class="c"># functions: java-set, mvn-build, ...</span>
+        </div>
+        <div class="cards">
+          <div class="card"><div class="tag">quando roda</div><p>Terminal novo, tmux, Git Bash, VS Code. <b>Não</b> roda em <code>bash script.sh</code> nem em shells não interativos (CI, cron).</p></div>
+          <div class="card"><div class="tag">por que é bom</div><p>Um único ponto de configuração para <b>PATH, JAVA_HOME, aliases, functions, prompt</b>. Instalar uma ferramenta = escrever uma linha.</p></div>
+          <div class="card"><div class="tag">como adicionar sem duplicar</div><p><code>grep -qxF 'source ...' ~/.bashrc || echo 'source ...' &gt;&gt; ~/.bashrc</code> — só adiciona se ainda não existe. Rode 10 vezes, nada quebra.</p></div>
+        </div>
+      </div>
+    </div>
+    <div class="slide-foot"><span>~/.bashrc</span><span>03 / 10</span></div>
+  </section>
+
+  <!-- 4. TOOLKIT + bootstrap.sh -->
+  <section class="slide">
+    <div class="deco bat glow" style="right:70px;top:180px;width:100px"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNDAgMTQwIj4KICA8ZyBmaWxsPSIjZmY3YTAwIj4KICAgIDxwYXRoIGlkPSJ3aW5nIiBkPSJNMTA2IDUyIEM4OCAzMiA2NiAyNCA0NiAyNiBMMTYgMzggTDMyIDQ4IEwxOCA1NiBMMzQgNjYgTDIyIDc0IEw0OCA4MiBDNzAgODYgOTQgNzYgMTA2IDY2IFoiLz4KICAgIDx1c2UgaHJlZj0iI3dpbmciIHRyYW5zZm9ybT0idHJhbnNsYXRlKDI0MCwwKSBzY2FsZSgtMSwxKSIvPgogICAgPGVsbGlwc2UgY3g9IjEyMCIgY3k9IjYyIiByeD0iMTYiIHJ5PSIxMyIvPgogICAgPHBhdGggZD0iTTEwNiA1MCBMOTQgMjYgTDExOCA0NCBaIi8+CiAgICA8cGF0aCBkPSJNMTM0IDUwIEwxNDYgMjYgTDEyMiA0NCBaIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTIwIiBjeT0iNzgiIHJ4PSI5IiByeT0iNyIvPgogIDwvZz4KICA8ZyBmaWxsPSIjZmZkMDhhIj4KICAgIDxjaXJjbGUgY3g9IjExNCIgY3k9IjYwIiByPSIyLjYiLz4KICAgIDxjaXJjbGUgY3g9IjEyNiIgY3k9IjYwIiByPSIyLjYiLz4KICA8L2c+Cjwvc3ZnPgo=" alt="morcego"></div>
+    <div class="slide-head">
+      <div class="kicker">03 · o toolkit</div>
+      <h2 class="reveal">Três arquivos,<br><span class="grad">zero magia</span></h2>
+      <p class="lede reveal" style="--d:.08s">Um zip pequeno que você joga em <b>~/dev/bash</b>. O <b>bootstrap.sh</b> é o único ponto de entrada: ele só source-a os outros.</p>
+    </div>
+    <div class="content">
+      <div class="split reveal" style="--d:.16s">
+        <div class="filetree">
+<span class="d">~/dev/bash/</span>
+  <span class="f">bootstrap.sh</span>  <span class="d">← porta de entrada</span>
+  <span class="f">java.sh</span>  <span class="d">← java-set, java-set-from-pom</span>
+  <span class="f">maven.sh</span>  <span class="d">← mvn-build, mvn-build-skip-tests</span>
+
+<span class="d">~/opt/</span>
+  <span class="d">java/</span>  <span class="f">jdk-25</span> <span class="f">jdk-21</span> <span class="f">jdk-17</span> <span class="f">jdk-11</span>
+  <span class="d">maven/</span> <span class="f">apache-maven-3.10.0</span>
+        </div>
+        <div class="code">
+<span class="c">#!/usr/bin/env bash</span>
+<span class="c"># bootstrap.sh — só carrega os outros scripts</span>
+BASH_HOME="${BASH_SOURCE[0]%<span class="s">/*</span>}"
+
+source "$BASH_HOME/<span class="s">java.sh</span>"
+source "$BASH_HOME/<span class="s">maven.sh</span>"
+        </div>
+      </div>
+      <div class="note reveal" style="--d:.24s"><b>KISS:</b> nenhum <code>if</code>, nenhum <code>export</code> misterioso. <code>BASH_HOME</code> vem do próprio arquivo, então o toolkit funciona em <b>~/dev/bash</b> ou em qualquer outro lugar.</div>
+    </div>
+    <div class="slide-foot"><span>bootstrap.sh</span><span>04 / 10</span></div>
+  </section>
+  <!-- 5. java.sh -->
+  <section class="slide">
+    <div class="deco pumpkin glow" style="right:52px;top:34px;width:120px"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNDAgMjIwIj4KICA8cGF0aCBkPSJNMTEyIDU2IEMxMDYgNDAgMTE2IDI4IDEzMiAyNCBDMTM4IDI2IDEzNCAzNiAxMjYgNDIgQzEyMCA0NiAxMTggNTAgMTE4IDU2IFoiIGZpbGw9IiM2ZjRhMjAiLz4KICA8ZWxsaXBzZSBjeD0iMTIwIiBjeT0iMTI0IiByeD0iODIiIHJ5PSI3MCIgZmlsbD0iI2ZmN2EwMCIvPgogIDxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2MwNGYwMCIgc3Ryb2tlLXdpZHRoPSIzIiBvcGFjaXR5PSIuNyI+CiAgICA8cGF0aCBkPSJNOTIgNTggQzc4IDkyIDc4IDE1NiA5MiAxOTAiLz4KICAgIDxwYXRoIGQ9Ik0xNDggNTggQzE2MiA5MiAxNjIgMTU2IDE0OCAxOTAiLz4KICAgIDxwYXRoIGQ9Ik02NCA3MiBDNTIgMTAwIDUyIDE0OCA2NCAxNzYiLz4KICAgIDxwYXRoIGQ9Ik0xNzYgNzIgQzE4OCAxMDAgMTg4IDE0OCAxNzYgMTc2Ii8+CiAgPC9nPgogIDxnIGZpbGw9IiMwODA2MDUiPgogICAgPHBhdGggZD0iTTg0IDEwMiBMMTA2IDkyIEwxMDAgMTE4IFoiLz4KICAgIDxwYXRoIGQ9Ik0xNTYgMTAyIEwxMzQgOTIgTDE0MCAxMTggWiIvPgogICAgPHBhdGggZD0iTTkwIDEzMiBMMTA0IDEyOCBMMTEyIDE0MCBMMTIwIDEyOCBMMTI4IDE0MCBMMTM2IDEyOCBMMTUwIDEzMiBMMTQ2IDE1OCBMOTQgMTU4IFoiLz4KICA8L2c+CiAgPGcgZmlsbD0iI2ZmZDA4YSI+CiAgICA8Y2lyY2xlIGN4PSI5NiIgY3k9IjEwNCIgcj0iMi41Ii8+CiAgICA8Y2lyY2xlIGN4PSIxNDQiIGN5PSIxMDQiIHI9IjIuNSIvPgogIDwvZz4KPC9zdmc+Cg==" alt="abóbora"></div>
+    <div class="slide-head">
+      <div class="kicker">04 · java.sh</div>
+      <h2 class="reveal">Uma versão de Java<br><span class="grad">por projeto</span></h2>
+      <p class="lede reveal" style="--d:.08s">Cada JDK fica em <b>~/opt/java/jdk-&lt;versão&gt;</b>. Um comando troca o <b>JAVA_HOME</b>, o <b>PATH</b> e os aliases na hora.</p>
+    </div>
+    <div class="content">
+      <div class="split reveal" style="--d:.16s">
+        <div class="code">
+<span class="k">java-set</span>() {
+  java_home="$HOME/opt/java/jdk-$1"
+  if [ ! -d "$java_home" ]; then
+    echo "Java $1 não existe em $java_home" >&2
+    return 1
+  fi
+
+  export JAVA_HOME="$java_home"
+  export PATH="$JAVA_HOME/bin:$PATH"
+  <span class="k">alias</span> java="$JAVA_HOME/bin/java"
+  <span class="k">alias</span> keytool="$JAVA_HOME/bin/keytool"
+
+  echo "Java $1 ativado ✔"
+}
+
+<span class="k">java-set-from-pom</span>() {
+  version=$(grep -oE '&lt;(java.version|maven.compiler.release)&gt;[0-9]+' pom.xml \
+    | head -n 1 | grep -oE '[0-9]+')
+  java-set "$version"
+}
+        </div>
+        <div class="cards">
+          <div class="term">
+<span class="p">$</span> cd ~/dev/legacy-app
+<span class="p">$</span> java-set-from-pom
+<span class="ok">Java 11 ativado ✔</span>
+<span class="p">$</span> java -version
+<span class="out">openjdk 11.0.2</span>
+
+<span class="p">$</span> cd ~/dev/new-app
+<span class="p">$</span> java-set 25
+<span class="ok">Java 25 ativado ✔</span>
+          </div>
+          <div class="card"><div class="tag">por que funciona</div><p>O <b>alias</b> aponta direto para o binário certo, então nem depende do <code>PATH</code> estar 100% sincronizado — e o <code>keytool</code> acompanha a mesma versão.</p></div>
+          <div class="card"><div class="tag">dica</div><p>Chame <code>java-set-from-pom</code> num <code>.bashrc</code> por projeto, ou simplesmente antes do build. O <code>mvn-build</code> já faz isso por você.</p></div>
+        </div>
+      </div>
+    </div>
+    <div class="slide-foot"><span>java.sh</span><span>05 / 10</span></div>
+  </section>
+
+  <!-- 6. maven.sh -->
+  <section class="slide">
+    <div class="deco cat" style="left:260px;bottom:58px;width:120px"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNDAgMjIwIj4KICA8ZyBmaWxsPSIjMTIwZDA5IiBzdHJva2U9IiNmZjdhMDAiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+CiAgICA8IS0tIGNvcnBvIHNlbnRhZG8gLS0+CiAgICA8cGF0aCBkPSJNNjYgMjEyIEM1OCAxNTggNzYgMTE4IDEyMCAxMTAgQzE2NCAxMTggMTgyIDE1OCAxNzQgMjEyIFoiLz4KICAgIDwhLS0gY2FiZcOnYSAtLT4KICAgIDxjaXJjbGUgY3g9IjEyMCIgY3k9Ijc0IiByPSIzOCIvPgogICAgPCEtLSBvcmVsaGFzIC0tPgogICAgPHBhdGggZD0iTTk0IDQ0IEw3NiAxMiBMMTE0IDM2IFoiLz4KICAgIDxwYXRoIGQ9Ik0xNDYgNDQgTDE2NCAxMiBMMTI2IDM2IFoiLz4KICAgIDwhLS0gcGF0YXMgLS0+CiAgICA8cGF0aCBkPSJNODQgMjEyIEM4NCAyMDIgOTYgMTk4IDEwNCAyMDIgTDEwNCAyMTIgWiIvPgogICAgPHBhdGggZD0iTTEzNiAyMTIgQzE0NCAyMDIgMTU2IDE5OCAxNTYgMjEyIFoiLz4KICA8L2c+CiAgPCEtLSByYWJvIC0tPgogIDxwYXRoIGQ9Ik0xNzIgMTk2IEMyMTQgMTkwIDIzMiAxNDggMjIwIDExMiBDMjE0IDk0IDE5OCA5MiAxODggMTAyIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjdhMDAiIHN0cm9rZS13aWR0aD0iNyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPCEtLSBvbGhvcyAtLT4KICA8ZyBmaWxsPSIjZmY3YTAwIj4KICAgIDxlbGxpcHNlIGN4PSIxMDQiIGN5PSI3MiIgcng9IjkiIHJ5PSIxMSIvPgogICAgPGVsbGlwc2UgY3g9IjEzNiIgY3k9IjcyIiByeD0iOSIgcnk9IjExIi8+CiAgPC9nPgogIDxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZDA4YSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIG9wYWNpdHk9Ii44Ij4KICAgIDxwYXRoIGQ9Ik0xMTIgOTIgQzExOCA5OCAxMjIgOTggMTI4IDkyIi8+CiAgICA8cGF0aCBkPSJNOTYgODQgQzgyIDkwIDcyIDk2IDY0IDEwMiIvPgogICAgPHBhdGggZD0iTTE0NCA4NCBDMTU4IDkwIDE2OCA5NiAxNzYgMTAyIi8+CiAgICA8cGF0aCBkPSJNOTggOTQgQzg2IDEwMiA3OCAxMDggNzIgMTE0Ii8+CiAgICA8cGF0aCBkPSJNMTQyIDk0IEMxNTQgMTAyIDE2MiAxMDggMTY4IDExNCIvPgogIDwvZz4KPC9zdmc+Cg==" alt="gato preto"></div>
+    <div class="slide-head">
+      <div class="kicker">05 · maven.sh</div>
+      <h2 class="reveal">Build certo,<br><span class="grad">sem decorar comando</span></h2>
+      <p class="lede reveal" style="--d:.08s"><b>mvn-build</b> garante o Java do pom, usa <b>settings.xml</b> se existir e aceita parâmetros extras.</p>
+    </div>
+    <div class="content">
+      <div class="split reveal" style="--d:.16s">
+        <div class="code">
+<span class="k">mvn-build</span>() {
+  java-set-from-pom   <span class="c"># garante o Java certo antes de buildar</span>
+
+  if [ -f settings.xml ]; then
+    mvn clean package -s settings.xml "$@"
+  else
+    mvn clean package "$@"
+  fi
+}
+
+<span class="k">mvn-build-skip-tests</span>() {
+  mvn-build -DskipTests "$@"
+}
+        </div>
+        <div class="cards">
+          <div class="term">
+<span class="p">$</span> mvn-build
+<span class="out">Java 17 ativado ✔</span>
+<span class="out">BUILD SUCCESS · target/app.jar</span>
+
+<span class="p">$</span> mvn-build-skip-tests -Dmaven.main.skip
+<span class="p">$</span> mvn-build -Dcheckstyle.skip
+          </div>
+          <div class="card"><div class="tag">base para outros comandos</div><p><code>"$@"</code> deixa você anexar qualquer flag do Maven. <code>mvn-build-skip-tests</code> é só <code>mvn-build</code> com <code>-DskipTests</code> — zero duplicação.</p></div>
+        </div>
+      </div>
+    </div>
+    <div class="slide-foot"><span>maven.sh</span><span>06 / 10</span></div>
+  </section>
+
+  <!-- 7. INSTALAÇÃO -->
+  <section class="slide">
+    <div class="deco bat glow" style="right:70px;bottom:66px;width:120px"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNDAgMTQwIj4KICA8ZyBmaWxsPSIjZmY3YTAwIj4KICAgIDxwYXRoIGlkPSJ3aW5nIiBkPSJNMTA2IDUyIEM4OCAzMiA2NiAyNCA0NiAyNiBMMTYgMzggTDMyIDQ4IEwxOCA1NiBMMzQgNjYgTDIyIDc0IEw0OCA4MiBDNzAgODYgOTQgNzYgMTA2IDY2IFoiLz4KICAgIDx1c2UgaHJlZj0iI3dpbmciIHRyYW5zZm9ybT0idHJhbnNsYXRlKDI0MCwwKSBzY2FsZSgtMSwxKSIvPgogICAgPGVsbGlwc2UgY3g9IjEyMCIgY3k9IjYyIiByeD0iMTYiIHJ5PSIxMyIvPgogICAgPHBhdGggZD0iTTEwNiA1MCBMOTQgMjYgTDExOCA0NCBaIi8+CiAgICA8cGF0aCBkPSJNMTM0IDUwIEwxNDYgMjYgTDEyMiA0NCBaIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTIwIiBjeT0iNzgiIHJ4PSI5IiByeT0iNyIvPgogIDwvZz4KICA8ZyBmaWxsPSIjZmZkMDhhIj4KICAgIDxjaXJjbGUgY3g9IjExNCIgY3k9IjYwIiByPSIyLjYiLz4KICAgIDxjaXJjbGUgY3g9IjEyNiIgY3k9IjYwIiByPSIyLjYiLz4KICA8L2c+Cjwvc3ZnPgo=" alt="morcego"></div>
+    <div class="slide-head">
+      <div class="kicker">06 · setup</div>
+      <h2 class="reveal">Instalação em <span class="grad">4 passos</span><br>iguais em Windows, macOS e Linux</h2>
+    </div>
+    <div class="content">
+      <div class="steps reveal" style="--d:.12s">
+        <div class="step"><span class="n">1</span><span class="cmd">mkdir -p ~/opt/{java,maven}<em>  — onde os JDKs e o Maven vão morar</em></span></div>
+        <div class="step"><span class="n">2</span><span class="cmd">mkdir -p ~/dev/bash<em>  — a casa dos scripts</em></span></div>
+        <div class="step"><span class="n">3</span><span class="cmd">unzip bash-toolkit.zip -d ~/dev/bash<em>  — bootstrap.sh, java.sh, maven.sh</em></span></div>
+        <div class="step"><span class="n">4</span><span class="cmd">grep -qxF 'source $HOME/dev/bash/bootstrap.sh' ~/.bashrc 2>/dev/null || echo 'source $HOME/dev/bash/bootstrap.sh' >> ~/.bashrc<em>  — idempotente, pode rodar quantas vezes quiser</em></span></div>
+      </div>
+      <div class="note reveal" style="--d:.2s"><b>Dois cuidados:</b> 1) o bootstrap precisa do caminho real (<code>$HOME/dev/bash/bootstrap.sh</code>), não de <code>$HOME/bootstrap.sh</code>. 2) no macOS, se o Terminal abre bash como shell de <b>login</b>, repita a linha em <b>~/.bash_profile</b> também.</div>
+      <div class="takeaways reveal" style="--d:.28s">
+        <div class="take"><b>Windows</b> — Git Bash: <code>~</code> é <code>%USERPROFILE%</code>, os comandos são idênticos.</div>
+        <div class="take"><b>macOS</b> — mesma estrutura; use bash explícito ou adapte para zsh.</div>
+        <div class="take"><b>Linux</b> — funciona como está. Recarregue com <code>source ~/.bashrc</code>.</div>
+      </div>
+    </div>
+    <div class="slide-foot"><span>mesma estrutura de diretórios</span><span>07 / 10</span></div>
+  </section>
+  <!-- 8. DOWNLOADS -->
+  <section class="slide">
+    <div class="deco pumpkin glow" style="right:26px;top:24px;width:104px"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNDAgMjIwIj4KICA8cGF0aCBkPSJNMTEyIDU2IEMxMDYgNDAgMTE2IDI4IDEzMiAyNCBDMTM4IDI2IDEzNCAzNiAxMjYgNDIgQzEyMCA0NiAxMTggNTAgMTE4IDU2IFoiIGZpbGw9IiM2ZjRhMjAiLz4KICA8ZWxsaXBzZSBjeD0iMTIwIiBjeT0iMTI0IiByeD0iODIiIHJ5PSI3MCIgZmlsbD0iI2ZmN2EwMCIvPgogIDxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2MwNGYwMCIgc3Ryb2tlLXdpZHRoPSIzIiBvcGFjaXR5PSIuNyI+CiAgICA8cGF0aCBkPSJNOTIgNTggQzc4IDkyIDc4IDE1NiA5MiAxOTAiLz4KICAgIDxwYXRoIGQ9Ik0xNDggNTggQzE2MiA5MiAxNjIgMTU2IDE0OCAxOTAiLz4KICAgIDxwYXRoIGQ9Ik02NCA3MiBDNTIgMTAwIDUyIDE0OCA2NCAxNzYiLz4KICAgIDxwYXRoIGQ9Ik0xNzYgNzIgQzE4OCAxMDAgMTg4IDE0OCAxNzYgMTc2Ii8+CiAgPC9nPgogIDxnIGZpbGw9IiMwODA2MDUiPgogICAgPHBhdGggZD0iTTg0IDEwMiBMMTA2IDkyIEwxMDAgMTE4IFoiLz4KICAgIDxwYXRoIGQ9Ik0xNTYgMTAyIEwxMzQgOTIgTDE0MCAxMTggWiIvPgogICAgPHBhdGggZD0iTTkwIDEzMiBMMTA0IDEyOCBMMTEyIDE0MCBMMTIwIDEyOCBMMTI4IDE0MCBMMTM2IDEyOCBMMTUwIDEzMiBMMTQ2IDE1OCBMOTQgMTU4IFoiLz4KICA8L2c+CiAgPGcgZmlsbD0iI2ZmZDA4YSI+CiAgICA8Y2lyY2xlIGN4PSI5NiIgY3k9IjEwNCIgcj0iMi41Ii8+CiAgICA8Y2lyY2xlIGN4PSIxNDQiIGN5PSIxMDQiIHI9IjIuNSIvPgogIDwvZz4KPC9zdmc+Cg==" alt="abóbora"></div>
+    <div class="slide-head">
+      <div class="kicker">07 · onde baixar</div>
+      <h2 class="reveal">Os JDKs e o Maven<br><span class="grad">para cada sistema</span></h2>
+      <p class="lede reveal" style="--d:.08s">Baixe, descompacte em <b>~/opt/java</b> e renomeie para <b>jdk-&lt;versão&gt;</b> — é exatamente o que <code>java-set</code> espera.</p>
+    </div>
+    <div class="content">
+      <table class="links reveal" style="--d:.16s">
+        <tr><th>versão</th><th>Windows</th><th>macOS (M3/M4/M5)</th><th>Linux x86_64</th></tr>
+        <tr><td><b>Java 25.0.2</b> · LTS</td><td><a href="https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_windows-x64_bin.zip">.zip</a></td><td><a href="https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_macos-aarch64_bin.tar.gz">.tar.gz</a></td><td><a href="https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_linux-x64_bin.tar.gz">.tar.gz</a></td></tr>
+        <tr><td><b>Java 21.0.1</b></td><td><a href="https://download.java.net/java/GA/jdk21.0.1/415e3f918a1f4062a0074a2794853d0d/12/GPL/openjdk-21.0.1_windows-x64_bin.zip">.zip</a></td><td><a href="https://download.java.net/java/GA/jdk21.0.1/415e3f918a1f4062a0074a2794853d0d/12/GPL/openjdk-21.0.1_macos-aarch64_bin.tar.gz">.tar.gz</a></td><td><a href="https://download.java.net/java/GA/jdk21.0.1/415e3f918a1f4062a0074a2794853d0d/12/GPL/openjdk-21.0.1_linux-x64_bin.tar.gz">.tar.gz</a></td></tr>
+        <tr><td><b>Java 17.0.2</b></td><td><a href="https://download.java.net/java/GA/jdk17.0.2/dfd4a8d0985749f896bed50d7138ee7f/8/GPL/openjdk-17.0.2_windows-x64_bin.zip">.zip</a></td><td><a href="https://download.java.net/java/GA/jdk17.0.2/dfd4a8d0985749f896bed50d7138ee7f/8/GPL/openjdk-17.0.2_macos-aarch64_bin.tar.gz">.tar.gz</a></td><td><a href="https://download.java.net/java/GA/jdk17.0.2/dfd4a8d0985749f896bed50d7138ee7f/8/GPL/openjdk-17.0.2_linux-x64_bin.tar.gz">.tar.gz</a></td></tr>
+        <tr><td><b>Java 11.0.2</b></td><td><a href="https://download.java.net/java/GA/jdk11/9/GPL/openjdk-11.0.2_windows-x64_bin.zip">.zip</a></td><td><a href="https://download.java.net/java/GA/jdk11/9/GPL/openjdk-11.0.2_osx-x64_bin.tar.gz">.tar.gz</a></td><td><a href="https://download.java.net/java/GA/jdk11/9/GPL/openjdk-11.0.2_linux-x64_bin.tar.gz">.tar.gz</a></td></tr>
+        <tr><td><b>Maven 3.10.0</b></td><td><a href="https://dlcdn.apache.org/maven/maven-3/3.10.0/binaries/apache-maven-3.10.0-bin.zip">.zip</a></td><td><a href="https://dlcdn.apache.org/maven/maven-3/3.10.0/binaries/apache-maven-3.10.0-bin.tar.gz">.tar.gz</a></td><td><a href="https://dlcdn.apache.org/maven/maven-3/3.10.0/binaries/apache-maven-3.10.0-bin.tar.gz">.tar.gz</a></td></tr>
+      </table>
+      <div class="code reveal" style="--d:.24s">
+<span class="c"># exemplo: JDK 25 no Linux</span>
+tar -xzf openjdk-25.0.2_linux-x64_bin.tar.gz -C ~/opt/java
+mv ~/opt/java/jdk-25.0.2 ~/opt/java/<span class="s">jdk-25</span>
+<span class="c"># java-set 25  ✔</span>
+      </div>
+      <div class="note reveal" style="--d:.3s"><b>Alerta:</b> o link "java 21 / linux" que circula por aí aponta para <code>openjdk-22_linux-x64</code>. Use o link 21.0.1 acima (confirmado: HTTP 200). Arquivo errado = <code>java-set 21</code> falhando silenciosamente.</div>
+    </div>
+    <div class="slide-foot"><span>jdk.java.net/archive</span><span>08 / 10</span></div>
+  </section>
+
+  <!-- 9. JAVA 25 + THREADS VIRTUAIS -->
+  <section class="slide">
+    <div class="deco bat glow" style="right:64px;top:34px;width:112px"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNDAgMTQwIj4KICA8ZyBmaWxsPSIjZmY3YTAwIj4KICAgIDxwYXRoIGlkPSJ3aW5nIiBkPSJNMTA2IDUyIEM4OCAzMiA2NiAyNCA0NiAyNiBMMTYgMzggTDMyIDQ4IEwxOCA1NiBMMzQgNjYgTDIyIDc0IEw0OCA4MiBDNzAgODYgOTQgNzYgMTA2IDY2IFoiLz4KICAgIDx1c2UgaHJlZj0iI3dpbmciIHRyYW5zZm9ybT0idHJhbnNsYXRlKDI0MCwwKSBzY2FsZSgtMSwxKSIvPgogICAgPGVsbGlwc2UgY3g9IjEyMCIgY3k9IjYyIiByeD0iMTYiIHJ5PSIxMyIvPgogICAgPHBhdGggZD0iTTEwNiA1MCBMOTQgMjYgTDExOCA0NCBaIi8+CiAgICA8cGF0aCBkPSJNMTM0IDUwIEwxNDYgMjYgTDEyMiA0NCBaIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTIwIiBjeT0iNzgiIHJ4PSI5IiByeT0iNyIvPgogIDwvZz4KICA8ZyBmaWxsPSIjZmZkMDhhIj4KICAgIDxjaXJjbGUgY3g9IjExNCIgY3k9IjYwIiByPSIyLjYiLz4KICAgIDxjaXJjbGUgY3g9IjEyNiIgY3k9IjYwIiByPSIyLjYiLz4KICA8L2c+Cjwvc3ZnPgo=" alt="morcego"></div>
+    <div class="slide-head">
+      <div class="kicker">08 · java 25</div>
+      <h2 class="reveal">Threads virtuais:<br><span class="grad">milhares de "fantasmas"</span><br>num só corpo</h2>
+      <p class="lede reveal" style="--d:.08s">Thread virtual = objeto barato managed pela JVM. Ela <b>monta e desmonta</b> sobre threads reais, então você cria dezenas de milhares sem esgotar memória nem o CPU.</p>
+    </div>
+    <div class="content">
+      <div class="split reveal" style="--d:.16s">
+        <div class="code">
+<span class="c">// 1. a forma mais simples</span>
+var t = Thread.startVirtualThread(() -> System.out.println("boo!"));
+t.join();
+
+<span class="c">// 2. uma thread virtual POR tarefa (o padrão em requests)</span>
+try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+  IntStream.range(0, 100_000).forEach(i ->
+    executor.submit(() -> fetchGhost(i))   <span class="c">// bloquear aqui é barato</span>
+  );
+}
+
+<span class="c">// 3. Java 25 (preview): Structured Concurrency + Scoped Values</span>
+try (var scope = StructuredContext.newScope(50, 1_000)) {
+  scope.spawn(() -> checkHaunt(<span class="s">1L</span>));
+  scope.join();
+}
+        </div>
+        <div class="cards">
+          <div class="card"><div class="tag">o que mudou no 25</div><p>LTS desde <b>16/09/2025</b>. Threads virtuais são <b>final desde o Java 21</b> (JEP 444); no 25 chegam <b>Scoped Values finalizadas</b> (JEP 506) e <b>Structured Concurrency</b> em preview (JEP 505), além do fim do <b>pinning</b> (JEP 491).</p></div>
+          <div class="card"><div class="tag">quando usar</div><p>I/O-bound: HTTP, banco, filas. CPU-bound ainda precisa de paralelismo real — thread virtual não multiplica núcleos.</p></div>
+          <div class="card"><div class="tag">cuidados</div><p><code>synchronized</code> e <code>System.out</code> costumam "pinar" a thread. Migrar <code>synchronized</code> → <code>ReentrantLock</code> resolve.</p></div>
+        </div>
+      </div>
+    </div>
+    <div class="slide-foot"><span>java 25 · project loom</span><span>09 / 10</span></div>
+  </section>
+
+  <!-- 10. INFOGRÁFICO + FECHAMENTO -->
+  <section class="slide">
+    <div class="deco cat" style="right:52px;top:26px;width:96px"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNDAgMjIwIj4KICA8ZyBmaWxsPSIjMTIwZDA5IiBzdHJva2U9IiNmZjdhMDAiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+CiAgICA8IS0tIGNvcnBvIHNlbnRhZG8gLS0+CiAgICA8cGF0aCBkPSJNNjYgMjEyIEM1OCAxNTggNzYgMTE4IDEyMCAxMTAgQzE2NCAxMTggMTgyIDE1OCAxNzQgMjEyIFoiLz4KICAgIDwhLS0gY2FiZcOnYSAtLT4KICAgIDxjaXJjbGUgY3g9IjEyMCIgY3k9Ijc0IiByPSIzOCIvPgogICAgPCEtLSBvcmVsaGFzIC0tPgogICAgPHBhdGggZD0iTTk0IDQ0IEw3NiAxMiBMMTE0IDM2IFoiLz4KICAgIDxwYXRoIGQ9Ik0xNDYgNDQgTDE2NCAxMiBMMTI2IDM2IFoiLz4KICAgIDwhLS0gcGF0YXMgLS0+CiAgICA8cGF0aCBkPSJNODQgMjEyIEM4NCAyMDIgOTYgMTk4IDEwNCAyMDIgTDEwNCAyMTIgWiIvPgogICAgPHBhdGggZD0iTTEzNiAyMTIgQzE0NCAyMDIgMTU2IDE5OCAxNTYgMjEyIFoiLz4KICA8L2c+CiAgPCEtLSByYWJvIC0tPgogIDxwYXRoIGQ9Ik0xNzIgMTk2IEMyMTQgMTkwIDIzMiAxNDggMjIwIDExMiBDMjE0IDk0IDE5OCA5MiAxODggMTAyIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjdhMDAiIHN0cm9rZS13aWR0aD0iNyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPCEtLSBvbGhvcyAtLT4KICA8ZyBmaWxsPSIjZmY3YTAwIj4KICAgIDxlbGxpcHNlIGN4PSIxMDQiIGN5PSI3MiIgcng9IjkiIHJ5PSIxMSIvPgogICAgPGVsbGlwc2UgY3g9IjEzNiIgY3k9IjcyIiByeD0iOSIgcnk9IjExIi8+CiAgPC9nPgogIDxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZDA4YSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIG9wYWNpdHk9Ii44Ij4KICAgIDxwYXRoIGQ9Ik0xMTIgOTIgQzExOCA5OCAxMjIgOTggMTI4IDkyIi8+CiAgICA8cGF0aCBkPSJNOTYgODQgQzgyIDkwIDcyIDk2IDY0IDEwMiIvPgogICAgPHBhdGggZD0iTTE0NCA4NCBDMTU4IDkwIDE2OCA5NiAxNzYgMTAyIi8+CiAgICA8cGF0aCBkPSJNOTggOTQgQzg2IDEwMiA3OCAxMDggNzIgMTE0Ii8+CiAgICA8cGF0aCBkPSJNMTQyIDk0IEMxNTQgMTAyIDE2MiAxMDggMTY4IDExNCIvPgogIDwvZz4KPC9zdmc+Cg==" alt="gato preto"></div>
+    <div class="slide-head">
+      <div class="kicker">09 · camadas lado a lado</div>
+      <h2 class="reveal">Plataforma <span class="grad">vs</span> virtual</h2>
+    </div>
+    <div class="content versus">
+      <img class="threads-img reveal" style="--d:.1s" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDgwIDYyMCI+CiAgPHN0eWxlPgogICAgdGV4dHtmb250LWZhbWlseToiSW50ZXIiLCJTZWdvZSBVSSIsc3lzdGVtLXVpLHNhbnMtc2VyaWZ9CiAgICAudHRse2ZvbnQtc2l6ZToyMnB4O2ZvbnQtd2VpZ2h0OjgwMDtsZXR0ZXItc3BhY2luZzouMTRlbTtmaWxsOiNmZmIzNDd9CiAgICAubGFie2ZvbnQtc2l6ZToxN3B4O2ZvbnQtd2VpZ2h0OjcwMDtmaWxsOiNmN2YxZTh9CiAgICAuc3Vie2ZvbnQtc2l6ZToxM3B4O2ZpbGw6I2E5OWI4Y30KICAgIC50YWd7Zm9udC1zaXplOjEzcHg7Zm9udC13ZWlnaHQ6NzAwO2xldHRlci1zcGFjaW5nOi4xZW07ZmlsbDojZmY3YTAwfQogICAgLmJveHtmaWxsOnJnYmEoMjU1LDEyMiwwLC4wNyk7c3Ryb2tlOiNmZjdhMDA7c3Ryb2tlLXdpZHRoOjJ9CiAgICAuY2hpcHtmaWxsOnJnYmEoMjU1LDEyMiwwLC4xNik7c3Ryb2tlOiNmZjdhMDA7c3Ryb2tlLXdpZHRoOjEuNX0KICAgIC5hcnJvd3tzdHJva2U6I2ZmN2EwMDtzdHJva2Utd2lkdGg6MjtmaWxsOm5vbmV9CiAgICAuZGFzaHtzdHJva2U6I2ZmYjM0NztzdHJva2Utd2lkdGg6MjtmaWxsOm5vbmU7c3Ryb2tlLWRhc2hhcnJheTo2IDV9CiAgPC9zdHlsZT4KCiAgPHJlY3Qgd2lkdGg9IjEwODAiIGhlaWdodD0iNjIwIiBmaWxsPSIjMDgwNjA1Ii8+CgogIDwhLS0gdMOtdHVsb3MgLS0+CiAgPHRleHQgY2xhc3M9InR0bCIgeD0iNjAiIHk9IjQyIj5USFJFQUQgREUgUExBVEFGT1JNQTwvdGV4dD4KICA8dGV4dCBjbGFzcz0idHRsIiB4PSI2MDAiIHk9IjQyIj5USFJFQUQgVklSVFVBTDwvdGV4dD4KICA8bGluZSB4MT0iNTQwIiB5MT0iMjAiIHgyPSI1NDAiIHkyPSI1NjAiIHN0cm9rZT0icmdiYSgyNTUsMTIyLDAsLjI1KSIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1kYXNoYXJyYXk9IjQgNiIvPgoKICA8IS0tIGNvbHVuYSBlc3F1ZXJkYSAtLT4KICA8Zz4KICAgIDxyZWN0IGNsYXNzPSJib3giIHg9IjYwIiB5PSI2NiIgd2lkdGg9IjQyMCIgaGVpZ2h0PSI1MCIgcng9IjEwIi8+CiAgICA8dGV4dCBjbGFzcz0ibGFiIiB4PSI4MCIgeT0iOTIiPjEgdGFyZWZhIC8gcmVxdWVzdDwvdGV4dD4KICAgIDxyZWN0IGNsYXNzPSJib3giIHg9IjYwIiB5PSIxNDAiIHdpZHRoPSI0MjAiIGhlaWdodD0iNTAiIHJ4PSIxMCIvPgogICAgPHRleHQgY2xhc3M9ImxhYiIgeD0iODAiIHk9IjE2NiI+MSBvYmpldG8gVGhyZWFkPC90ZXh0PgogICAgPHRleHQgY2xhc3M9InN1YiIgeD0iODAiIHk9IjE4MiI+Y3JpYXIgw6kgY2FybywgY2FkYSB1bWEgY3VzdGEgfjEgTUI8L3RleHQ+CiAgICA8cmVjdCBjbGFzcz0iYm94IiB4PSI2MCIgeT0iMjE0IiB3aWR0aD0iNDIwIiBoZWlnaHQ9IjUwIiByeD0iMTAiLz4KICAgIDx0ZXh0IGNsYXNzPSJsYWIiIHg9IjgwIiB5PSIyNDAiPjEgdGhyZWFkIGRvIHNpc3RlbWEgb3BlcmFjaW9uYWw8L3RleHQ+CiAgICA8dGV4dCBjbGFzcz0ic3ViIiB4PSI4MCIgeT0iMjU2Ij5yZWxhw6fDo28gMSA6IDEgY29tIG8gU088L3RleHQ+CiAgICA8cmVjdCBjbGFzcz0iYm94IiB4PSI2MCIgeT0iMjg4IiB3aWR0aD0iNDIwIiBoZWlnaHQ9IjUwIiByeD0iMTAiLz4KICAgIDx0ZXh0IGNsYXNzPSJsYWIiIHg9IjgwIiB5PSIzMTQiPnN0YWNrIGRlIDEgTUIgcmVzZXJ2YWRvPC90ZXh0PgogICAgPHRleHQgY2xhc3M9InN1YiIgeD0iODAiIHk9IjMzMCI+ZW1waWxoYXIgPSBlc2dvdGFyIG1lbcOzcmlhPC90ZXh0PgogICAgPHJlY3QgY2xhc3M9ImJveCIgeD0iNjAiIHk9IjM2MiIgd2lkdGg9IjQyMCIgaGVpZ2h0PSI1MCIgcng9IjEwIi8+CiAgICA8dGV4dCBjbGFzcz0ibGFiIiB4PSI4MCIgeT0iMzg4Ij5uw7pjbGVvIGRvIENQVTwvdGV4dD4KICAgIDxwYXRoIGNsYXNzPSJhcnJvdyIgZD0iTTI3MCAxMTYgTDI3MCAxNDAgTTI2NCAxMzQgTDI3MCAxNDAgTDI3NiAxMzQiLz4KICAgIDxwYXRoIGNsYXNzPSJhcnJvdyIgZD0iTTI3MCAxOTAgTDI3MCAyMTQgTTI2NCAyMDggTDI3MCAyMTQgTDI3NiAyMDgiLz4KICAgIDxwYXRoIGNsYXNzPSJhcnJvdyIgZD0iTTI3MCAyNjQgTDI3MCAyODggTTI2NCAyODIgTDI3MCAyODggTDI3NiAyODIiLz4KICAgIDxwYXRoIGNsYXNzPSJhcnJvdyIgZD0iTTI3MCAzMzggTDI3MCAzNjIgTTI2NCAzNTYgTDI3MCAzNjIgTDI3NiAzNTYiLz4KICAgIDx0ZXh0IGNsYXNzPSJ0YWciIHg9IjYwIiB5PSI0NTAiPkxJTUlURTogTUlMSEFSRVMgREUgVEhSRUFEUzwvdGV4dD4KICA8L2c+CgogIDwhLS0gY29sdW5hIGRpcmVpdGEgLS0+CiAgPGc+CiAgICA8cmVjdCBjbGFzcz0iYm94IiB4PSI2MDAiIHk9IjY2IiB3aWR0aD0iNDIwIiBoZWlnaHQ9IjUwIiByeD0iMTAiLz4KICAgIDx0ZXh0IGNsYXNzPSJsYWIiIHg9IjYyMCIgeT0iOTIiPjEwLjAwMCsgdGhyZWFkcyB2aXJ0dWFpczwvdGV4dD4KICAgIDx0ZXh0IGNsYXNzPSJzdWIiIHg9IjYyMCIgeT0iMTA4Ij5iYXJhdGFzOiB+MTAwIGJ5dGVzLCBjcmlhZGFzIHNvYiBkZW1hbmRhPC90ZXh0PgogICAgPGc+CiAgICAgIDxyZWN0IGNsYXNzPSJjaGlwIiB4PSI4NjAiIHk9Ijc2IiB3aWR0aD0iMjIiIGhlaWdodD0iMTIiIHJ4PSIzIi8+CiAgICAgIDxyZWN0IGNsYXNzPSJjaGlwIiB4PSI4ODgiIHk9Ijc2IiB3aWR0aD0iMjIiIGhlaWdodD0iMTIiIHJ4PSIzIi8+CiAgICAgIDxyZWN0IGNsYXNzPSJjaGlwIiB4PSI5MTYiIHk9Ijc2IiB3aWR0aD0iMjIiIGhlaWdodD0iMTIiIHJ4PSIzIi8+CiAgICAgIDxyZWN0IGNsYXNzPSJjaGlwIiB4PSI5NDQiIHk9Ijc2IiB3aWR0aD0iMjIiIGhlaWdodD0iMTIiIHJ4PSIzIi8+CiAgICAgIDxyZWN0IGNsYXNzPSJjaGlwIiB4PSI5NzIiIHk9Ijc2IiB3aWR0aD0iMjIiIGhlaWdodD0iMTIiIHJ4PSIzIi8+CiAgICA8L2c+CiAgICA8cmVjdCBjbGFzcz0iYm94IiB4PSI2MDAiIHk9IjE0MCIgd2lkdGg9IjQyMCIgaGVpZ2h0PSI1MCIgcng9IjEwIi8+CiAgICA8dGV4dCBjbGFzcz0ibGFiIiB4PSI2MjAiIHk9IjE2NiI+c3RhY2sgZW0gcGVkYcOnb3Mgbm8gaGVhcDwvdGV4dD4KICAgIDx0ZXh0IGNsYXNzPSJzdWIiIHg9IjYyMCIgeT0iMTgyIj5jb250aW51YXRpb25zOiBjcmVzY2Ugc8OzIG8gbmVjZXNzw6FyaW88L3RleHQ+CiAgICA8cmVjdCBjbGFzcz0iYm94IiB4PSI2MDAiIHk9IjIxNCIgd2lkdGg9IjQyMCIgaGVpZ2h0PSI1MCIgcng9IjEwIi8+CiAgICA8dGV4dCBjbGFzcz0ibGFiIiB4PSI2MjAiIHk9IjI0MCI+Y2FycmllciB0aHJlYWRzIChGb3JrSm9pblBvb2wpPC90ZXh0PgogICAgPHRleHQgY2xhc3M9InN1YiIgeD0iNjIwIiB5PSIyNTYiPm1vbnRhIC8gZGVzbW9udGEgcXVhbmRvIGJsb3F1ZWlhPC90ZXh0PgogICAgPHJlY3QgY2xhc3M9ImJveCIgeD0iNjAwIiB5PSIyODgiIHdpZHRoPSI0MjAiIGhlaWdodD0iNTAiIHJ4PSIxMCIvPgogICAgPHRleHQgY2xhc3M9ImxhYiIgeD0iNjIwIiB5PSIzMTQiPnBvdWNhcyB0aHJlYWRzIGRvIHNpc3RlbWEgb3BlcmFjaW9uYWw8L3RleHQ+CiAgICA8dGV4dCBjbGFzcz0ic3ViIiB4PSI2MjAiIHk9IjMzMCI+TiA6IDEg4oCUIG11aXRhcyB2aXJ0dWFpcyBwb3IgY2FycmllcjwvdGV4dD4KICAgIDxyZWN0IGNsYXNzPSJib3giIHg9IjYwMCIgeT0iMzYyIiB3aWR0aD0iNDIwIiBoZWlnaHQ9IjUwIiByeD0iMTAiLz4KICAgIDx0ZXh0IGNsYXNzPSJsYWIiIHg9IjYyMCIgeT0iMzg4Ij5uw7pjbGVvIGRvIENQVTwvdGV4dD4KICAgIDxwYXRoIGNsYXNzPSJhcnJvdyIgZD0iTTgxMCAxMTYgTDgxMCAxNDAgTTgwNCAxMzQgTDgxMCAxNDAgTDgxNiAxMzQiLz4KICAgIDxwYXRoIGNsYXNzPSJhcnJvdyIgZD0iTTgxMCAxOTAgTDgxMCAyMTQgTTgwNCAyMDggTDgxMCAyMTQgTDgxNiAyMDgiLz4KICAgIDxwYXRoIGNsYXNzPSJhcnJvdyIgZD0iTTgxMCAyNjQgTDgxMCAyODggTTgwNCAyODIgTDgxMCAyODggTDgxNiAyODIiLz4KICAgIDxwYXRoIGNsYXNzPSJhcnJvdyIgZD0iTTgxMCAzMzggTDgxMCAzNjIgTTgwNCAzNTYgTDgxMCAzNjIgTDgxNiAzNTYiLz4KICAgIDx0ZXh0IGNsYXNzPSJ0YWciIHg9IjYwMCIgeT0iNDUwIj5MSU1JVEU6IE1JTEjDlUVTIERFIFRIUkVBRFM8L3RleHQ+CiAgPC9nPgoKICA8IS0tIGNoaXBzIHJlcHJlc2VudGFuZG8gdsOhcmlhcyB0aHJlYWRzIHZpcnR1YWlzIC0tPgogIDxnPgogICAgPHJlY3QgY2xhc3M9ImNoaXAiIHg9IjExMCIgeT0iNDcwIiB3aWR0aD0iMTYwIiBoZWlnaHQ9IjkwIiByeD0iMTIiLz4KICAgIDx0ZXh0IGNsYXNzPSJ0YWciIHg9IjEzMCIgeT0iNDk0Ij4xIHRocmVhZDwvdGV4dD4KICAgIDx0ZXh0IGNsYXNzPSJzdWIiIHg9IjEzMCIgeT0iNTEzIj49IDEgdGhyZWFkIGRvIFNPPC90ZXh0PgogICAgPHRleHQgY2xhc3M9InN1YiIgeD0iMTMwIiB5PSI1MzIiPj0gMSBNQiBkZSBzdGFjazwvdGV4dD4KICAgIDx0ZXh0IGNsYXNzPSJzdWIiIHg9IjEzMCIgeT0iNTUxIj49IHNlbXByZSAidml2YSI8L3RleHQ+CgogICAgPHJlY3QgY2xhc3M9ImNoaXAiIHg9IjczMCIgeT0iNDcwIiB3aWR0aD0iMjMwIiBoZWlnaHQ9IjkwIiByeD0iMTIiLz4KICAgIDx0ZXh0IGNsYXNzPSJ0YWciIHg9Ijc1MCIgeT0iNDk0Ij5OIHRocmVhZHMgdmlydHVhaXM8L3RleHQ+CiAgICA8dGV4dCBjbGFzcz0ic3ViIiB4PSI3NTAiIHk9IjUxMyI+PSAxIGNhcnJpZXIgdGhyZWFkPC90ZXh0PgogICAgPHRleHQgY2xhc3M9InN1YiIgeD0iNzUwIiB5PSI1MzIiPj0gc3RhY2sgbm8gaGVhcCwgc29iIGRlbWFuZGE8L3RleHQ+CiAgICA8dGV4dCBjbGFzcz0ic3ViIiB4PSI3NTAiIHk9IjU1MSI+PSBkb3JtZSBxdWFuZG8gYmxvcXVlaWE8L3RleHQ+CgogICAgPHRleHQgY2xhc3M9InN1YiIgeD0iNTQwIiB5PSI1OTIiIHRleHQtYW5jaG9yPSJtaWRkbGUiPlByb2plY3QgTG9vbSDCtyBKRVAgNDQ0IChmaW5hbCBubyBKYXZhIDIxKSDCtyBKYXZhIDI1IExUUzogU3RydWN0dXJlZCBDb25jdXJyZW5jeSBlIFNjb3BlZCBWYWx1ZXM8L3RleHQ+CiAgPC9nPgo8L3N2Zz4K" alt="Diagrama de camadas: thread de plataforma comparada com thread virtual">
+      <aside>
+        <div class="cheat reveal" style="--d:.2s">
+          <div class="cmd"><code>java-set 25</code><span>troca o JDK do shell atual</span></div>
+          <div class="cmd"><code>java-set-from-pom</code><span>lê a versão do pom.xml</span></div>
+          <div class="cmd"><code>mvn-build</code><span>settings.xml + args extras</span></div>
+          <div class="cmd"><code>mvn-build-skip-tests</code><span>build rápido, sem testes</span></div>
+        </div>
+        <div class="takeaways reveal" style="--d:.28s">
+          <div class="take"><b>1 MB vs ~100 bytes</b> — o custo de uma thread é o gargalo, não o CPU.</div>
+          <div class="take"><b>1:1 vs N:1</b> — virtual troca stack nativa por continuations no heap.</div>
+          <div class="take"><b>Monta/desmonta</b> — quando bloqueia, o carrier continua trabalhando.</div>
+        </div>
+      </aside>
+    </div>
+    <div class="slide-foot"><span>bash-toolkit.zip · MIT · KISS</span><span>10 / 10</span></div>
+  </section>
+</div>
+
+<div id="nav">
+  <button class="navbtn" id="prev" aria-label="slide anterior">‹</button>
+  <div id="dots"></div>
+  <button class="navbtn" id="next" aria-label="próximo slide">›</button>
+</div>
+
+<script>
+  const slides = [...document.querySelectorAll('.slide')];
+  const dots = document.getElementById('dots');
+  const counter = document.getElementById('counter');
+  const bar = document.querySelector('#progress i');
+  let i = 0;
+
+  slides.forEach((_, n) => {
+    const d = document.createElement('button');
+    d.className = 'dot'; d.setAttribute('aria-label', 'slide ' + (n + 1));
+    d.onclick = () => go(n);
+    dots.appendChild(d);
+  });
+
+  function go(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('active', k === i));
+    [...dots.children].forEach((d, k) => d.classList.toggle('on', k === i));
+    counter.textContent = String(i + 1).padStart(2, '0') + ' / ' + slides.length;
+    bar.style.width = ((i + 1) / slides.length) * 100 + '%';
+  }
+
+  document.getElementById('start').onclick = () => go(1);
+  document.getElementById('prev').onclick = () => go(i - 1);
+  document.getElementById('next').onclick = () => go(i + 1);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') go(i - 1);
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') go(i + 1);
+    if (e.key === 'Home') go(0);
+    if (e.key === 'End') go(slides.length - 1);
+  });
+
+  go(0);
+</script>
+</body>
+</html>
